@@ -42,5 +42,20 @@ namespace Server.Controllers
                 return BadRequest($"Login failed {ex.Message}");
             }
         }
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshTokenAsync(RefreshToken token)
+        {
+            try
+            {
+                if (token is null) return BadRequest("Token model is empty");
+                var result = await userAccount.RefreshTokenAsync(token);
+                return Ok(result);
+            }
+            catch (Exception)
+            {
+
+                return BadRequest("Token could not be refreshed");
+            }
+        }
     }
 }

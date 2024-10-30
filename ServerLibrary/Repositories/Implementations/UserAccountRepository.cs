@@ -74,10 +74,23 @@ namespace ServerLibrary.Repositories.Implementations
                 var appUser = await FindUserByEmail(user.Email);
                 if (appUser is null) return new LoginResponse(false, "User does not exist");
                 if (!BCrypt.Net.BCrypt.Verify(user.Password,appUser.Password)) return new LoginResponse(false, "Email/Password is not valid");
-                var getUserRole = await context.UserRoles.FirstOrDefaultAsync(x => x.UserId == appUser.Id);
-                var getRoleName = await context.SystemRoles.FirstOrDefaultAsync(x=>x.Id.Equals(getUserRole.RoleId));
+                var getUserRole = await GetUserRole(appUser.Id);
+                if (getUserRole is null) return new LoginResponse(false, "User role not found");
+                var getRoleName = await GetUserName(getUserRole.RoleId);
+                if (getRoleName is null) return new LoginResponse(false, "Role not found");
                 string jwtToken = GenerateToken(appUser,getRoleName.Name);
                 string refreshToken = GenerateRefreshToken();
+                
+                var findUser = await context.refreshTokenInfos.FirstOrDefaultAsync(x => x.UserId == appUser.Id);
+                if (findUser is not null)
+                {
+                    findUser.RefreshToken = refreshToken;
+                    await context.SaveChangesAsync();
+                }
+                else
+                {
+                    await AddToDatabase(new RefreshTokenInfo() { UserId = appUser.Id, RefreshToken = refreshToken });
+                }
                 return new LoginResponse(true, "Login successful", jwtToken, refreshToken);
 
 
@@ -85,7 +98,7 @@ namespace ServerLibrary.Repositories.Implementations
             catch (Exception ex)
             {
 
-                throw;
+                return new LoginResponse(false, $"Login failed {ex.Message}");
             }
         }
 
@@ -118,6 +131,8 @@ namespace ServerLibrary.Repositories.Implementations
            
         }
 
+        private async Task<UserRole> GetUserRole(int userId) => await context.UserRoles.FirstOrDefaultAsync(x => x.UserId == userId);
+        private async Task<SystemRole> GetUserName(int roleId) => await context.SystemRoles.FirstOrDefaultAsync(x => x.Id == roleId);
         private static string GenerateRefreshToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
         private async Task<AppUser> FindUserByEmail(string email) =>
@@ -130,6 +145,34 @@ namespace ServerLibrary.Repositories.Implementations
             return (T)result.Entity;
         }
 
+        public async Task<LoginResponse> RefreshTokenAsync(RefreshToken token)
+        {
+            try
+            {
+                if (token is null) return new LoginResponse(false,"Model is empty");
+                var findToken = await context.refreshTokenInfos.FirstOrDefaultAsync(x => x.RefreshToken.Equals(token.Token));
+                if (findToken is null) return new LoginResponse(false, "Token not found");
 
+                var user = await context.AppUsers.FirstOrDefaultAsync(x => x.Id == findToken.UserId);
+                if (user is null) return new LoginResponse(false, "Refresh token could not be generated because user not found");
+
+                var userRole = await GetUserRole(user.Id);
+                var userRoleName = await GetUserName(userRole.RoleId);
+                string jwtToken = GenerateToken(user, userRoleName.Name);
+                string refreshToken = GenerateRefreshToken();
+
+                var updateRefreshToken = await context.refreshTokenInfos.FirstOrDefaultAsync(x => x.RefreshToken.Equals(token.Token));
+                if(updateRefreshToken is null) return new LoginResponse(false, "Refresh token could not be generated because user has not sign in");
+
+                updateRefreshToken.RefreshToken = refreshToken;
+                await context.SaveChangesAsync();
+                return new LoginResponse(true, "Refresh token generated successfully", jwtToken, refreshToken);
+            }
+            catch (Exception ex )
+            {
+
+                return new LoginResponse(false, $"Refresh token failed {ex.Message}");
+            }
+        }
     }
 }
