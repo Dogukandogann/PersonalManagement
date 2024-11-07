@@ -18,6 +18,17 @@ builder.Services.AddDbContext<HrDbContext>(options =>{
 });
 builder.Services.Configure<JwtSection>(builder.Configuration.GetSection("JwtSection"));
 builder.Services.AddScoped<IUserAccount, UserAccountRepository>();
+builder.Services.AddCors(opt =>
+{
+    opt.AddPolicy("AllowBlazorWasm",
+        builder => builder
+        .WithOrigins("https://localhost:7234", "http://localhost:5219")
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .AllowCredentials()
+
+        );
+});
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -28,7 +39,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
+app.UseCors("AllowBlazorWasm");
 app.UseAuthorization();
 
 app.MapControllers();
